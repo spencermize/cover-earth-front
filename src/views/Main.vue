@@ -67,7 +67,7 @@
 	import Map from 'ol/Map';
 	import View from 'ol/View';
 	import TileLayer from 'ol/layer/Tile';
-	import {getBottomLeft, getBottomRight, getTopLeft, getTopRight} from 'ol/extent';
+	import {getBottomRight, getTopLeft} from 'ol/extent';
 	import {defaults} from 'ol/interaction';
 	import {toLonLat} from 'ol/proj';
 	import WebGLPointsLayer from 'ol/layer/WebGLPoints';
@@ -119,7 +119,7 @@
 
 				console.log('decoding');
 				const decoded = geobuf.decode(new Pbf(await response.arrayBuffer()));
-				console.log(decoded);
+
 				console.log('creating geojson')
 				const vectorSource = new Vector({
 					features: new GeoJSON().readFeatures(decoded, { featureProjection: 'EPSG:3857' })
@@ -140,7 +140,7 @@
 				this.map.addLayer(webgl);
 
 				console.log('rendering');
-				this.map.renderSync();
+				this.map.render();
 				console.log('done');
 				this.loading = false;
 			}
