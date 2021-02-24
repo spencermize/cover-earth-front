@@ -29,11 +29,25 @@
 							v-on="on"
 							v-bind="attrs"
 						>				
-							<v-icon>mdi-card-search-outline</v-icon>
+							<v-icon>mdi-dots-square</v-icon>
 						</v-btn>
 					</template>
 					<span>Map Visible Dots</span>
-				</v-tooltip>						
+				</v-tooltip>		
+				<v-tooltip bottom>
+					<template v-slot:activator="{ on, attrs }">
+						<v-btn 
+							color="primary"
+							icon
+							v-on:click="drawGrid()" 
+							v-on="on"
+							v-bind="attrs"
+						>				
+							<v-icon>mdi-grid</v-icon>
+						</v-btn>
+					</template>
+					<span>Draw Grid</span>
+				</v-tooltip>				
 				<v-tooltip bottom>
 					<template v-slot:activator="{ on, attrs }">
 						<v-btn 
@@ -104,12 +118,31 @@
 				}
 			},
 
+			drawGrid: async function() {
+				this.loading = true;
+				const response = await fetch(`${process.env.VUE_APP_API_URL}/locations/grid/${this.getBBoxString()}`, {credentials: 'include'});
+				const decoded = geobuf.decode(new Pbf(await response.arrayBuffer()));
+				const source = new Vector({
+					features: new GeoJSON().readFeatures(decoded, { featureProjection: 'EPSG:3857' })
+				});
+
+				const vector = new VectorLayer({
+					source,
+				});
+				this.map.addLayer(vector);
+				this.loading = false;
+			},
+
 			mapVisible: async function() {	
+				await this.loadPoints(`${process.env.VUE_APP_API_URL}/locations/strava/points/${this.getBBoxString()}`);
+			},	
+
+			getBBoxString: function() {
 				const extents = this.map.getView().calculateExtent();
 				const topLeft = toLonLat(getTopLeft(extents));
 				const bottomRight = toLonLat(getBottomRight(extents));
-				await this.loadPoints(`${process.env.VUE_APP_API_URL}/locations/strava/points/${topLeft[0]},${topLeft[1]},${bottomRight[0]},${bottomRight[1]}`);
-			},	
+				return `${topLeft[0]},${topLeft[1]},${bottomRight[0]},${bottomRight[1]}`;
+			},
 
 			loadPoints: async function(location: string) {
 
@@ -148,19 +181,20 @@
 		mounted() {
 			const view: View = new View({
 					projection: 'EPSG:3857',
-					center: [0, 0],
-					zoom: 13
-				})
+					zoom: 10
+				});
+			view.setCenter([41.1668, -85.4812]);
 			this.map = new Map({
 				target: 'map',
-				interactions: defaults({dragPan: true, mouseWheelZoom: true}),				
+				interactions: defaults({dragPan: true, mouseWheelZoom: true}),
+						
 				layers: [
 					new TileLayer({
 						source: new Stamen({
 							layer: "terrain"
 						})
 					})
-				],
+				], 
 				view
 			});	
 
