@@ -77,7 +77,6 @@
 	import * as geobuf from 'geobuf';
 	import Pbf from 'pbf';
 
-	// Try out OpenLayers
 	import Map from 'ol/Map';
 	import View from 'ol/View';
 	import TileLayer from 'ol/layer/Tile';
@@ -91,6 +90,12 @@
 	import VectorLayer from 'ol/layer/Vector';
 	import { SymbolType } from 'ol/style/LiteralStyle';
 	import Stamen from "ol/source/Stamen";
+
+	import * as turf from '@turf/turf';
+	import Geometry from 'ol/geom/Geometry';
+	import Feature from 'ol/Feature';
+import { FeatureCollection, Polygon, Properties } from '@turf/turf';
+
 	
 	export default Vue.extend({
 		name: 'Main',
@@ -102,7 +107,9 @@
 			return {
 				map: {} as Map,
 				message: "" as string,
-				loading: false as boolean
+				loading: false as boolean,
+				hoverTile: new Feature() as Feature<Geometry>,
+				grid: turf.featureCollection([]) as FeatureCollection<Polygon, Properties>
 			}
 		},
 		methods: {
@@ -136,6 +143,14 @@
 			mapVisible: async function() {	
 				await this.loadPoints(`${process.env.VUE_APP_API_URL}/locations/strava/points/${this.getBBoxString()}`);
 			},	
+
+			getBBox: function() : [number, number, number, number] {
+				const extents = this.map.getView().calculateExtent();
+				const topLeft = toLonLat(getTopLeft(extents));
+				const bottomRight = toLonLat(getBottomRight(extents));
+
+				return [topLeft[0], topLeft[1], bottomRight[0], bottomRight[1]];
+			},
 
 			getBBoxString: function() {
 				const extents = this.map.getView().calculateExtent();
@@ -176,6 +191,20 @@
 				this.map.render();
 				console.log('done');
 				this.loading = false;
+			},
+			generateHex: function() {
+				const mask = turf.bboxPolygon(this.getBBox());
+				const size = 10;
+				const southLimit = -55;
+				const northLimit = 78;
+				return turf.featureCollection([
+					...turf.hexGrid([-180, southLimit, 0, northLimit], size, {
+						mask
+					}).features,
+					...turf.hexGrid([0, southLimit, 180, northLimit], size, {
+						mask
+					}).features
+				]);
 			}
 		},
 		mounted() {
@@ -206,8 +235,39 @@
 				tracking: true
 			});
 
-			geolocation.once('change', () => {
+			geolocation.on('change', () => {
 				view.setCenter(geolocation.getPosition());
+			});
+
+			const source = new Vector();
+
+			const vector = new VectorLayer({
+				source,
+			});
+
+			this.map.addLayer(vector);
+			this.grid = this.generateHex();
+			this.map.on("pointermove", (e) => {
+				let found = false;
+				let index = 0;
+				try {
+					while(!found && index < this.grid.features.length - 1) {
+						found = turf.booleanPointInPolygon(toLonLat(e.coordinate, view.getProjection()), this.grid.features[index]);
+						index++;
+					}
+					if (found) {
+						source.clear();
+						this.hoverTile = new GeoJSON().readFeature(this.grid.features[index], { featureProjection: 'EPSG:3857' });
+						source.addFeature(this.hoverTile);
+					}
+				} catch(e) {
+					console.log(this.grid.features.length);
+				}
+			});
+
+			this.map.on("moveend", (e) => {
+				console.log(e);
+				this.grid = this.generateHex();
 			});
 		}
 	})
