@@ -82,7 +82,7 @@
 	import TileLayer from 'ol/layer/Tile';
 	import {getBottomRight, getTopLeft} from 'ol/extent';
 	import {defaults} from 'ol/interaction';
-	import {toLonLat} from 'ol/proj';
+	import {fromLonLat, toLonLat} from 'ol/proj';
 	import WebGLPointsLayer from 'ol/layer/WebGLPoints';
 	import GeoJSON from 'ol/format/GeoJSON';
 	import Vector from 'ol/source/Vector';
@@ -94,7 +94,8 @@
 	import * as turf from '@turf/turf';
 	import Geometry from 'ol/geom/Geometry';
 	import Feature from 'ol/Feature';
-import { FeatureCollection, Polygon, Properties } from '@turf/turf';
+import { Coord, FeatureCollection, Polygon, Properties } from '@turf/turf';
+import { Coordinate } from 'ol/coordinate';
 
 	
 	export default Vue.extend({
@@ -205,14 +206,58 @@ import { FeatureCollection, Polygon, Properties } from '@turf/turf';
 						mask
 					}).features
 				]);
+			},
+
+			generateSingleHex: function(center: Coordinate) {
+				const size = .01;
+				const coords = [];
+				for(let i = 1; i < 8; i++) {
+					const angleDeg = 60 * i - 30;
+					const angleRad = Math.PI / 180 * angleDeg;
+					coords.push([center[0] + size * Math.cos(angleRad), center[1] + size * Math.sin(angleRad)]);
+				}
+
+				return turf.feature(turf.geometry("LineString", coords));
+			},
+
+			gpsToGrid(coord: Coordinate) {
+				const sigDigits = 4;
+				const x = Math.floor(this.shift(turf.round(coord[0], sigDigits) + 180, 1 - sigDigits));
+				const y = Math.floor(this.shift(turf.round(coord[1], sigDigits) + 90, 1 - sigDigits));
+
+				const retValue = [x, y];
+				return retValue;
+			},
+
+			gridToGps(coord: Coordinate) {
+				const sigDigits = 4;
+				const x = this.shift(coord[0], sigDigits - 1) - 180;
+				const y = this.shift(coord[1], sigDigits - 1) - 90;
+
+				const retValue = [x, y];
+				return retValue;
+			},
+
+			shift(num: number, sigDigits: number) {
+				return num / Math.pow(10, sigDigits);
+			},
+
+			getNearestCenter(coord: Coordinate): Coordinate {
+				const precisionX = 17.5;
+				const precisionY = 15;
+
+				coord[1] = Math.round(coord[1] / precisionY ) * precisionY;
+				const offset = coord[1] % 2 === 0 ? precisionX / 2 : 0;
+				coord[0] = (Math.round(coord[0] / precisionX ) * precisionX) + offset;
+				return coord;
 			}
 		},
 		mounted() {
 			const view: View = new View({
 					projection: 'EPSG:3857',
-					zoom: 10
+					zoom: 13,
+					center: fromLonLat([-85.4812, 41.1668])
 				});
-			view.setCenter([41.1668, -85.4812]);
 			this.map = new Map({
 				target: 'map',
 				interactions: defaults({dragPan: true, mouseWheelZoom: true}),
@@ -246,28 +291,20 @@ import { FeatureCollection, Polygon, Properties } from '@turf/turf';
 			});
 
 			this.map.addLayer(vector);
-			this.grid = this.generateHex();
+			// this.grid = this.generateHex();
 			this.map.on("pointermove", (e) => {
-				let found = false;
-				let index = 0;
-				try {
-					while(!found && index < this.grid.features.length - 1) {
-						found = turf.booleanPointInPolygon(toLonLat(e.coordinate, view.getProjection()), this.grid.features[index]);
-						index++;
-					}
-					if (found) {
-						source.clear();
-						this.hoverTile = new GeoJSON().readFeature(this.grid.features[index], { featureProjection: 'EPSG:3857' });
-						source.addFeature(this.hoverTile);
-					}
-				} catch(e) {
-					console.log(this.grid.features.length);
-				}
+				let center = this.gridToGps(this.getNearestCenter(this.gpsToGrid(toLonLat(e.coordinate))));
+				let hex = this.generateSingleHex(center);
+				// source.clear();
+				this.hoverTile = new GeoJSON().readFeature(hex, { featureProjection: 'EPSG:3857' });
+				source.addFeature(this.hoverTile);
+				this.map.render();
+
 			});
 
 			this.map.on("moveend", (e) => {
 				console.log(e);
-				this.grid = this.generateHex();
+				// this.grid = this.generateHex();
 			});
 		}
 	})
