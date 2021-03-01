@@ -81,6 +81,20 @@
 		<div ref="popup" v-show="false">Hi there!</div>
 		<v-snackbar v-if="message.length">{{ message }}</v-snackbar>		
 		<loading v-if="loading"></loading>
+		<v-dialog
+			v-model="selectedTile"
+			width="500"
+			scrollable
+			>
+			<v-card v-if="selectedTile && selectedTile.getProperties() && selectedTile.getProperties().activityMeta">
+				<v-list>
+					<v-list-item v-for="activity in selectedTile.getProperties().activityMeta" :key="activity.id">
+						{{ activity.name }}
+					</v-list-item>
+				</v-list>
+				
+			</v-card>
+		</v-dialog>
 	</div>
 </template>
 
@@ -118,7 +132,7 @@
 	import LineString from 'ol/geom/LineString';
 
 	import * as geohash from 'ngeohash';
-import Fill from 'ol/style/Fill';
+	import Fill from 'ol/style/Fill';
 
 	export default Vue.extend({
 		name: 'Main',
@@ -132,7 +146,8 @@ import Fill from 'ol/style/Fill';
 				message: "" as string,
 				loading: false as boolean,
 				hoverTile: new Feature() as Feature<Geometry>,
-				selectedTile: new Feature() as Feature<Geometry>,
+				selectedTile: null as Feature<Geometry>|null,
+				visitedGrid: {} as Record<string, Feature>,
 				grid: turf.featureCollection([]) as FeatureCollection<Polygon, Properties>
 			}
 		},
@@ -177,8 +192,6 @@ import Fill from 'ol/style/Fill';
 				const activities = await response.json();
 				const features = [];
 
-				let visitedGrid: Record<string, Feature> = {};
-
 				for(const activity of activities) {
 					if (activity.meta) {
 						const geo = new Polyline().readFeature(activity.meta.map.polyline, {
@@ -189,8 +202,19 @@ import Fill from 'ol/style/Fill';
 						for(let coordinate of lineString.getCoordinates()) {
 							const coord = this.gridToGps(this.getNearestCenter(this.gpsToGrid(toLonLat(coordinate))));
 							const hash = geohash.encode(coord[0], coord[1]);
-							if (!visitedGrid[hash]) {
-								visitedGrid[hash] = this.getClosestHex(coordinate);
+							if (!this.visitedGrid[hash]) {
+								this.visitedGrid[hash] = this.getClosestHex(coordinate);
+								this.visitedGrid[hash].setProperties({
+									activityMeta: {}
+								})
+							}
+
+							if (!this.visitedGrid[hash].getProperties().activityMeta[activity.id.toString()]) {
+								const meta = this.visitedGrid[hash].getProperties().activityMeta;
+								meta[activity.id.toString()] = activity.meta;
+								this.visitedGrid[hash].setProperties({
+									activityMeta: meta
+								})
 							}
 						}
 
@@ -204,9 +228,10 @@ import Fill from 'ol/style/Fill';
 
 				const vector = new VectorLayer({
 					source,
+					opacity: .5,
 					style: new Style({
 						stroke: new Stroke({
-							width: 2,
+							width: 4,
 							color: colors.pink.darken2
 						})
 					})
@@ -215,19 +240,19 @@ import Fill from 'ol/style/Fill';
 				this.map.addLayer(vector);
 
 				const hexSource = new Vector({
-					features: Object.values(visitedGrid)
+					features: Object.values(this.visitedGrid)
 				});
 
 				const hexVector = new VectorLayer({
 					source: hexSource,
-					opacity: .25,
+					opacity: .75,
 					style: new Style({
 						stroke: new Stroke({
 							width: 2,
 							color: colors.red.base
 						}),
 						fill: new Fill({
-							color: "rgba(23, 32, 25, 0.6)",
+							color: "rgba(23, 32, 25, 0.6)",  // TODO: doesn't work?
 						})
 					})
 				});
@@ -347,6 +372,13 @@ import Fill from 'ol/style/Fill';
 			getClosestHex(coord: Coordinate) {
 				const center = this.gridToGps(this.getNearestCenter(this.gpsToGrid(toLonLat(coord))));
 				return new GeoJSON().readFeature(this.generateSingleHex(center), { featureProjection: 'EPSG:3857' });
+			},
+
+			getVisitedHex(coordinate: Coordinate) {
+				const coord = this.gridToGps(this.getNearestCenter(this.gpsToGrid(toLonLat(coordinate))));
+				const hash = geohash.encode(coord[0], coord[1]);
+
+				return this.visitedGrid[hash] || null;
 			}
 		},
 		mounted() {
@@ -404,15 +436,11 @@ import Fill from 'ol/style/Fill';
 				hoverSource.addFeature(this.hoverTile);
 			});
 
-			this.map.on("moveend", (e) => {
-				console.log(e);
-				// this.grid = this.generateHex();
-			});
-
 			this.map.on("click", (e) => {
-				this.selectedTile = this.getClosestHex(e.coordinate);
+				this.selectedTile = this.getVisitedHex(e.coordinate) || this.getClosestHex(e.coordinate);
 				selectedSource.clear();
 				selectedSource.addFeature(this.selectedTile);
+				console.log(this.selectedTile.getProperties().activityMeta);
 			});
 		}
 	})
