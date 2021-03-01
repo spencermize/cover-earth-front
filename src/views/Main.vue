@@ -33,7 +33,21 @@
 						</v-btn>
 					</template>
 					<span>Map Visible Dots</span>
-				</v-tooltip>		
+				</v-tooltip>	
+				<v-tooltip bottom>
+					<template v-slot:activator="{ on, attrs }">
+						<v-btn 
+							color="primary"
+							icon
+							v-on:click="mapPaths()" 
+							v-on="on"
+							v-bind="attrs"
+						>				
+							<v-icon>mdi-map-marker-path</v-icon>
+						</v-btn>
+					</template>
+					<span>Show All Paths</span>
+				</v-tooltip>	
 				<v-tooltip bottom>
 					<template v-slot:activator="{ on, attrs }">
 						<v-btn 
@@ -94,10 +108,18 @@
 	import * as turf from '@turf/turf';
 	import Geometry from 'ol/geom/Geometry';
 	import Feature from 'ol/Feature';
-import { Coord, FeatureCollection, Polygon, Properties } from '@turf/turf';
-import { Coordinate } from 'ol/coordinate';
-
+	import { FeatureCollection, Polygon, Properties } from '@turf/turf';
+	import { Coordinate } from 'ol/coordinate';
+	import Style from 'ol/style/Style';
+	import Stroke from 'ol/style/Stroke';
+	import Polyline from 'ol/format/Polyline';
 	
+	import colors from 'vuetify/lib/util/colors'
+	import LineString from 'ol/geom/LineString';
+
+	import * as geohash from 'ngeohash';
+import Fill from 'ol/style/Fill';
+
 	export default Vue.extend({
 		name: 'Main',
 		components: { Loading },
@@ -110,6 +132,7 @@ import { Coordinate } from 'ol/coordinate';
 				message: "" as string,
 				loading: false as boolean,
 				hoverTile: new Feature() as Feature<Geometry>,
+				selectedTile: new Feature() as Feature<Geometry>,
 				grid: turf.featureCollection([]) as FeatureCollection<Polygon, Properties>
 			}
 		},
@@ -118,11 +141,14 @@ import { Coordinate } from 'ol/coordinate';
 				try {
 					this.loading = true;
 					const results = await fetch(`${process.env.VUE_APP_API_URL}/locations/sync/strava`, {credentials: 'include'});
-					await results.json();
+					const json = await results.json();
 					this.loading = false;
+					if (!json.success) {
+						throw 'Error syncing'
+					}
 					this.message = 'Successfully synced!';
 				} catch (e) {
-					this.message = 'Error syncing';
+					this.message = e;
 				}
 			},
 
@@ -144,6 +170,72 @@ import { Coordinate } from 'ol/coordinate';
 			mapVisible: async function() {	
 				await this.loadPoints(`${process.env.VUE_APP_API_URL}/locations/strava/points/${this.getBBoxString()}`);
 			},	
+
+			mapPaths: async function() {
+				this.loading = true;
+				const response = await fetch(`${process.env.VUE_APP_API_URL}/locations/strava/activities/`, {credentials: 'include'});
+				const activities = await response.json();
+				const features = [];
+
+				let visitedGrid: Record<string, Feature> = {};
+
+				for(const activity of activities) {
+					if (activity.meta) {
+						const geo = new Polyline().readFeature(activity.meta.map.polyline, {
+							featureProjection: 'EPSG:3857'
+						});
+
+						const lineString = geo.getGeometry() as LineString;
+						for(let coordinate of lineString.getCoordinates()) {
+							const coord = this.gridToGps(this.getNearestCenter(this.gpsToGrid(toLonLat(coordinate))));
+							const hash = geohash.encode(coord[0], coord[1]);
+							if (!visitedGrid[hash]) {
+								visitedGrid[hash] = this.getClosestHex(coordinate);
+							}
+						}
+
+						features.push(geo);
+					}			
+				}
+
+				const source = new Vector({
+					features
+				});
+
+				const vector = new VectorLayer({
+					source,
+					style: new Style({
+						stroke: new Stroke({
+							width: 2,
+							color: colors.pink.darken2
+						})
+					})
+				});
+				
+				this.map.addLayer(vector);
+
+				const hexSource = new Vector({
+					features: Object.values(visitedGrid)
+				});
+
+				const hexVector = new VectorLayer({
+					source: hexSource,
+					opacity: .25,
+					style: new Style({
+						stroke: new Stroke({
+							width: 2,
+							color: colors.red.base
+						}),
+						fill: new Fill({
+							color: "rgba(23, 32, 25, 0.6)",
+						})
+					})
+				});
+
+				this.map.addLayer(hexVector);
+				this.loading = false;
+
+			},
 
 			getBBox: function() : [number, number, number, number] {
 				const extents = this.map.getView().calculateExtent();
@@ -222,8 +314,8 @@ import { Coordinate } from 'ol/coordinate';
 
 			gpsToGrid(coord: Coordinate) {
 				const sigDigits = 4;
-				const x = Math.floor(this.shift(turf.round(coord[0], sigDigits) + 180, 1 - sigDigits));
-				const y = Math.floor(this.shift(turf.round(coord[1], sigDigits) + 90, 1 - sigDigits));
+				const x = Math.round(this.shift(turf.round(coord[0], sigDigits) + 180, 1 - sigDigits));
+				const y = Math.round(this.shift(turf.round(coord[1], sigDigits) + 90, 1 - sigDigits));
 
 				const retValue = [x, y];
 				return retValue;
@@ -243,13 +335,18 @@ import { Coordinate } from 'ol/coordinate';
 			},
 
 			getNearestCenter(coord: Coordinate): Coordinate {
-				const precisionX = 17.5;
+				const precisionX = 17.5; // TODO: generate these formulaicly ... ?!
 				const precisionY = 15;
 
 				coord[1] = Math.round(coord[1] / precisionY ) * precisionY;
 				const offset = coord[1] % 2 === 0 ? precisionX / 2 : 0;
 				coord[0] = (Math.round(coord[0] / precisionX ) * precisionX) + offset;
 				return coord;
+			},
+
+			getClosestHex(coord: Coordinate) {
+				const center = this.gridToGps(this.getNearestCenter(this.gpsToGrid(toLonLat(coord))));
+				return new GeoJSON().readFeature(this.generateSingleHex(center), { featureProjection: 'EPSG:3857' });
 			}
 		},
 		mounted() {
@@ -284,27 +381,38 @@ import { Coordinate } from 'ol/coordinate';
 				view.setCenter(geolocation.getPosition());
 			});
 
-			const source = new Vector();
-
-			const vector = new VectorLayer({
-				source,
+			const hoverSource = new Vector();
+			const hoverVector = new VectorLayer({
+				source: hoverSource,
 			});
 
-			this.map.addLayer(vector);
+			const selectedSource = new Vector();
+			const selectedVector = new VectorLayer({
+				source: selectedSource,
+				style: new Style({
+					stroke: new Stroke({
+						color: 'red'
+					})
+				})
+			});
+			this.map.addLayer(hoverVector);
+			this.map.addLayer(selectedVector);
 			// this.grid = this.generateHex();
 			this.map.on("pointermove", (e) => {
-				let center = this.gridToGps(this.getNearestCenter(this.gpsToGrid(toLonLat(e.coordinate))));
-				let hex = this.generateSingleHex(center);
-				// source.clear();
-				this.hoverTile = new GeoJSON().readFeature(hex, { featureProjection: 'EPSG:3857' });
-				source.addFeature(this.hoverTile);
-				this.map.render();
-
+				hoverSource.clear();
+				this.hoverTile = this.getClosestHex(e.coordinate);
+				hoverSource.addFeature(this.hoverTile);
 			});
 
 			this.map.on("moveend", (e) => {
 				console.log(e);
 				// this.grid = this.generateHex();
+			});
+
+			this.map.on("click", (e) => {
+				this.selectedTile = this.getClosestHex(e.coordinate);
+				selectedSource.clear();
+				selectedSource.addFeature(this.selectedTile);
 			});
 		}
 	})
@@ -320,5 +428,6 @@ import { Coordinate } from 'ol/coordinate';
 		height: 100vh;
 		width: 100vw;		
 		overflow: hidden;
+		cursor: pointer;
 	}
 </style>
