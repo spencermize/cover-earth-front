@@ -28,7 +28,7 @@
 </template>
 
 <script lang="ts">
-	import { ActivityMeta, ActivityType } from '../typings/strava';
+	import { ActivityMeta, ActivityType } from '@/typings';
     import Vue from 'vue';
     import format from 'date-fns/format';
     import * as turf from '@turf/turf';
