@@ -90,7 +90,7 @@
 	import Loading from "./Loading.vue";
 	import ActivityList from '@/components/ActivityList.vue';
 
-	import { ActivityMeta } from '@/typings/strava';
+	import { ActivityMeta } from '../typings/strava';
 
 	import * as geobuf from 'geobuf';
 	import Pbf from 'pbf';
