@@ -81,26 +81,16 @@
 		<div ref="popup" v-show="false">Hi there!</div>
 		<v-snackbar v-if="message.length">{{ message }}</v-snackbar>		
 		<loading v-if="loading"></loading>
-		<v-dialog
-			v-model="selectedTile"
-			width="500"
-			scrollable
-			>
-			<v-card v-if="selectedTile && selectedTile.getProperties() && selectedTile.getProperties().activityMeta">
-				<v-list>
-					<v-list-item v-for="activity in selectedTile.getProperties().activityMeta" :key="activity.id">
-						{{ activity.name }}
-					</v-list-item>
-				</v-list>
-				
-			</v-card>
-		</v-dialog>
+		<activity-list v-if="selectedTile && selectedTile.getProperties()" :hex="selectedTile" :initial-activities="selectedTile.getProperties().activityMeta"></activity-list>
 	</div>
 </template>
 
 <script lang="ts">
 	import Vue from 'vue';
 	import Loading from "./Loading.vue";
+	import ActivityList from '@/components/ActivityList.vue';
+
+	import { ActivityMeta } from '@/typings/strava';
 
 	import * as geobuf from 'geobuf';
 	import Pbf from 'pbf';
@@ -134,9 +124,10 @@
 	import * as geohash from 'ngeohash';
 	import Fill from 'ol/style/Fill';
 
+
 	export default Vue.extend({
 		name: 'Main',
-		components: { Loading },
+		components: { Loading, ActivityList },
 		props: {
 			user: String,
 		},
@@ -189,12 +180,12 @@
 			mapPaths: async function() {
 				this.loading = true;
 				const response = await fetch(`${process.env.VUE_APP_API_URL}/locations/strava/activities/`, {credentials: 'include'});
-				const activities = await response.json();
+				const activities = await response.json() as { id: string, meta: ActivityMeta, location?: [] }[];
 				const features = [];
 
 				for(const activity of activities) {
 					if (activity.meta) {
-						const geo = new Polyline().readFeature(activity.meta.map.polyline, {
+						const geo = new Polyline().readFeature(activity.meta.map.summary_polyline, {
 							featureProjection: 'EPSG:3857'
 						});
 
@@ -252,7 +243,7 @@
 							color: colors.red.base
 						}),
 						fill: new Fill({
-							color: "rgba(23, 32, 25, 0.6)",  // TODO: doesn't work?
+							color: colors.red.base,  // TODO: doesn't work?
 						})
 					})
 				});
@@ -328,12 +319,12 @@
 			generateSingleHex: function(center: Coordinate) {
 				const size = .01;
 				const coords = [];
-				for(let i = 1; i < 8; i++) {
+				for(let i = 1; i < 7; i++) {
 					const angleDeg = 60 * i - 30;
 					const angleRad = Math.PI / 180 * angleDeg;
 					coords.push([center[0] + size * Math.cos(angleRad), center[1] + size * Math.sin(angleRad)]);
 				}
-
+				coords.push(coords[0]);
 				return turf.feature(turf.geometry("LineString", coords));
 			},
 
@@ -416,6 +407,12 @@
 			const hoverSource = new Vector();
 			const hoverVector = new VectorLayer({
 				source: hoverSource,
+				style: new Style({
+					stroke: new Stroke({
+						width: 5,
+						color: colors.pink.darken2
+					})
+				})
 			});
 
 			const selectedSource = new Vector();
