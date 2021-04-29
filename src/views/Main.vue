@@ -48,7 +48,7 @@
 					</template>
 					<span>Show All Paths</span>
 				</v-tooltip>	
-				<v-tooltip bottom>
+				<!-- <v-tooltip bottom>
 					<template v-slot:activator="{ on, attrs }">
 						<v-btn 
 							color="primary"
@@ -61,7 +61,7 @@
 						</v-btn>
 					</template>
 					<span>Draw Grid</span>
-				</v-tooltip>				
+				</v-tooltip>				 -->
 				<v-tooltip bottom>
 					<template v-slot:activator="{ on, attrs }">
 						<v-btn 
