@@ -1,8 +1,9 @@
 <template>
 		<v-dialog
-			v-model="activities"
+			v-model="show"
 			width="500"
 			scrollable
+            @input="$emit('closed')"
 			>
 			<v-card>
                 <v-card-title class="headline grey lighten-2">
@@ -57,7 +58,8 @@
             data: function() {
                 return {
                     activities: this.initialActivities as ActivityMeta || {},
-                    units: DistanceUnit.Miles
+                    units: DistanceUnit.Miles,
+                    show: Object.keys(this.initialActivities).length ? true : false
                 }
             },
             methods: {

@@ -1,7 +1,16 @@
 <template>
   <v-app>
     <v-main>
-		<router-view v-on:login-change="onLoginChange" v-bind:login="login"></router-view>
+		<router-view v-on:login-change="onLoginChange" v-if="!error" v-bind:login="login"></router-view>
+		<v-alert 
+			v-if="error"
+			color="red"
+			type="error"
+			prominent
+			elevation="15"
+		>
+			Sorry, something major has gone wrong. Good luck!
+		</v-alert>
     </v-main>
   </v-app>
 </template>
@@ -14,6 +23,7 @@ export default Vue.extend({
 	data: () => {
 		return {
 			login: false as boolean,
+			error: false as boolean
 		}
 	},
 	methods: {

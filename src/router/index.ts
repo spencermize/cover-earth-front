@@ -36,11 +36,20 @@ router.beforeEach(async (to, from, next) => {
 	await Vue.nextTick();
 	
 	if (!router.app.$data.login){
-		const resp = await fetch(`${process.env.VUE_APP_API_URL}/users/session`, {
-      credentials: 'include'
-    });
-		router.app.$data.login = await resp.json();
-	}
+    try {
+      const resp = await fetch(`${process.env.VUE_APP_API_URL}/users/session`, {
+        credentials: 'include'
+      });
+      if (resp.ok) {
+        router.app.$data.login = await resp.json();
+      } else {
+        router.app.$data.error = true;
+      }
+
+    } catch (e) {
+      router.app.$data.error = true;
+    }
+  }
 
 	if (to.path != '/login' && !router.app.$data.login) {
 		next('/login');

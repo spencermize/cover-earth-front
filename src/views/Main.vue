@@ -81,7 +81,7 @@
 		<div ref="popup" v-show="false">Hi there!</div>
 		<v-snackbar v-if="message.length">{{ message }}</v-snackbar>		
 		<loading v-if="loading"></loading>
-		<activity-list v-if="selectedTile && selectedTile.getProperties()" :hex="selectedTile" :initial-activities="selectedTile.getProperties().activityMeta"></activity-list>
+		<activity-list v-on:closed="selectedTile = null" v-if="selectedTile && selectedTile.getProperties()" :hex="selectedTile" :initial-activities="selectedTile.getProperties().activityMeta"></activity-list>
 	</div>
 </template>
 
@@ -190,7 +190,19 @@
 						});
 
 						const lineString = geo.getGeometry() as LineString;
-						for(let coordinate of lineString.getCoordinates()) {
+						const coords = lineString.getCoordinates();
+						for(let i=0; i < coords.length; i++ ) {
+							const coordinate = coords[i];
+							// if ( coords[i + i] && turf.distance(coordinate, coords[i + 1]) > 5) {
+							// 	const line = turf.lineString([coordinate, coords[i + 1]]);
+							// 	console.log(line);
+							// 	const chunked = turf.lineChunk(line, 5);
+							// 	console.log(chunked);
+							// 	const newCoordinates = turf.coordAll(chunked);
+							// 	// coords.push(...newCoordinates);
+							// 	console.log(newCoordinates);
+							// }
+							
 							const coord = this.gridToGps(this.getNearestCenter(this.gpsToGrid(toLonLat(coordinate))));
 							const hash = geohash.encode(coord[0], coord[1]);
 							if (!this.visitedGrid[hash]) {
